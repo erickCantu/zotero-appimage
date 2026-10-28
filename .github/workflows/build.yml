@@ -1,0 +1,136 @@
+name: Build Zotero AppImage
+
+on:
+  schedule:
+    - cron: "0 21 * * 6"
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      did_build: ${{ steps.gate.outputs.did_build }}
+      clean: ${{ steps.url.outputs.clean }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Resolve current upstream download URL
+        id: url
+        run: |
+          set -euo pipefail
+          URL="$(curl -fsSI 'https://www.zotero.org/download/client/dl?channel=release&platform=linux-x86_64' \
+            | awk 'tolower($0) ~ /^location:/ {print $2}' | tr -d '\r')"
+          case "$URL" in
+            https://download.zotero.org/client/release/*/Zotero-*_linux-x86_64.tar.xz) ;;
+            *) echo "::error::Unexpected upstream URL: $URL"; exit 1 ;;
+          esac
+
+          FILENAME="${URL##*/}"
+          case "$FILENAME" in
+            Zotero-[0-9]*_linux-x86_64.tar.xz) ;;
+            *) echo "::error::Unexpected upstream filename"; exit 1 ;;
+          esac
+
+          CLEAN="${FILENAME#Zotero-}"
+          CLEAN="${CLEAN%_linux-x86_64.tar.xz}"
+          case "$CLEAN" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::Unexpected release version"; exit 1 ;;
+          esac
+
+          {
+            echo "url=$URL"
+            echo "filename=$FILENAME"
+            echo "clean=$CLEAN"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check whether this version was already published
+        id: gate
+        env:
+          CLEAN: ${{ steps.url.outputs.clean }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${CLEAN}")"
+          if [ "$code" = "200" ]; then
+            echo "Release ${CLEAN} already published — skipping build."
+            echo "did_build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "No release for ${CLEAN} (HTTP ${code}) — building and publishing."
+            echo "did_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install build tools
+        if: steps.gate.outputs.did_build == 'true'
+        run: sudo apt-get update && sudo apt-get install -y desktop-file-utils
+
+      - name: Download upstream archive (TLS-only integrity)
+        if: steps.gate.outputs.did_build == 'true'
+        env:
+          URL: ${{ steps.url.outputs.url }}
+          FILENAME: ${{ steps.url.outputs.filename }}
+        run: |
+          set -euo pipefail
+          curl -fL "$URL" -o "$FILENAME"
+          tar -tf "$FILENAME" > /dev/null
+
+      - name: Build AppImage
+        if: steps.gate.outputs.did_build == 'true'
+        run: |
+          bash zotero-builder.sh
+          desktop-file-validate zotero.AppDir/zotero.desktop
+
+      - name: Verify build artifacts
+        if: steps.gate.outputs.did_build == 'true'
+        env:
+          CLEAN: ${{ steps.url.outputs.clean }}
+        run: |
+          test -f "dist/Zotero-${CLEAN}-x86_64.AppImage"
+          test -f "dist/Zotero-${CLEAN}-x86_64.AppImage.zsync"
+
+      - name: Upload build artifacts
+        if: steps.gate.outputs.did_build == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: zotero-${{ steps.url.outputs.clean }}
+          path: |
+            dist/*.AppImage
+            dist/*.zsync
+
+  publish:
+    needs: build
+    if: needs.build.outputs.did_build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: true
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: zotero-${{ needs.build.outputs.clean }}
+          path: dist
+
+      - name: Publish versioned release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
+        with:
+          tag_name: ${{ needs.build.outputs.clean }}
+          name: "Zotero ${{ needs.build.outputs.clean }}"
+          files: |
+            dist/*.AppImage
+            dist/*.zsync
