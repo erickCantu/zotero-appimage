@@ -76,7 +76,7 @@ jobs:
           import re
           from pathlib import Path
 
-          path = Path("betterbird-builder.sh")
+          path = Path("zotero-builder.sh")
           text = path.read_text()
           url = os.environ["TOOL_URL"]
           sha = os.environ["TOOL_SHA"]
@@ -103,14 +103,14 @@ jobs:
           )
           if url_count != 1 or sha_count != 1:
               raise SystemExit(
-                  "betterbird-builder.sh must contain exactly one TOOL_URL and TOOL_SHA"
+                  "zotero-builder.sh must contain exactly one TOOL_URL and TOOL_SHA"
               )
           path.write_text(updated)
           PY
 
-          bash -n betterbird-builder.sh
-          grep -F "TOOL_URL=\"$TOOL_URL\"" betterbird-builder.sh
-          grep -F "TOOL_SHA=\"$TOOL_SHA\"" betterbird-builder.sh
+          bash -n zotero-builder.sh
+          grep -F "TOOL_URL=\"$TOOL_URL\"" zotero-builder.sh
+          grep -F "TOOL_SHA=\"$TOOL_SHA\"" zotero-builder.sh
 
       - name: Open update pull request
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
