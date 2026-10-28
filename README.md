@@ -16,6 +16,5 @@ chmod +x Zotero-*-x86_64.AppImage
 Each AppImage carries zsync update information pointing at this repository. Update with AppImageUpdate:
 
 ```sh
-
 ./appimageupdate Zotero-*-x86_64.AppImage
 ```
