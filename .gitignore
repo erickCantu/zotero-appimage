@@ -1,0 +1,13 @@
+*.AppImage
+*.zsync
+dist/
+
+
+zotero.AppDir/
+
+
+*.tar.*
+appimagetool*
+
+*.swp
+.DS_Store
