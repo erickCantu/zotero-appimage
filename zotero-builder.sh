@@ -14,7 +14,7 @@ CLEAN="${TARBALL##*/}"
 CLEAN="${CLEAN#Zotero-}"
 CLEAN="${CLEAN%_linux-x86_64.tar.xz}"
 
-TOPDIR="$(tar tf "$TARBALL" | head -n1 | cut -d/ -f1)"
+TOPDIR="$(tar tf "$TARBALL" | awk -F/ 'NR==1 { first=$1 } END { print first }')"
 [ -n "$TOPDIR" ] || { echo "Could not determine top-level directory" >&2; exit 1; }
 
 # -- 2. Download and verify a pinned appimagetool release
